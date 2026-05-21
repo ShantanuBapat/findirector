@@ -1,0 +1,81 @@
+# ============================================================
+# FinDirector .gitignore
+# ============================================================
+
+# Secrets and credentials — NEVER commit these
+.env
+.env.*
+*.pem
+*.key
+*.p12
+credentials
+aws-credentials*
+
+# Data — too large for git, lives in S3
+data/
+*.csv
+*.parquet
+*.jsonl
+!data/.gitkeep
+
+# Model artifacts — too large for git, lives in S3/HF Hub
+models/
+checkpoints/
+*.safetensors
+*.bin
+*.ckpt
+*.pt
+*.pth
+!models/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+*-checkpoint.ipynb
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!example.tfvars
+.terraform.lock.hcl
+
+# Docker
+.dockerignore_local
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Logs and temp
+*.log
+logs/
+tmp/
+.cache/
+
+# Build artifacts
+dist/
+build/
+*.egg
