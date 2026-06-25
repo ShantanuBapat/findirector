@@ -1,0 +1,14 @@
+# FinDirector — Session 2.1 requirements
+# Last updated: 2026-06-24
+
+# SEC filings download
+sec-edgar-downloader>=5.0.0
+
+# Hugging Face datasets (for ConvFinQA and others)
+datasets>=2.20.0
+
+# Data manipulation
+pandas>=2.0.0
+
+# JSON line files (for synthetic data later)
+jsonlines>=4.0.0
