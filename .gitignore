@@ -5,6 +5,7 @@
 # Secrets and credentials — NEVER commit these
 .env
 .env.*
+!.env.example
 *.pem
 *.key
 *.p12
@@ -58,7 +59,11 @@ env/
 .dockerignore_local
 
 # IDE / Editor
-.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
 .idea/
 *.swp
 *.swo

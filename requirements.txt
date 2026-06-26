@@ -12,3 +12,9 @@ pandas>=2.0.0
 
 # JSON line files (for synthetic data later)
 jsonlines>=4.0.0
+
+# Anthropic API (for synthetic data generation in Session 2.2)
+anthropic>=0.40.0
+
+# Loads .env file into environment variables (so we don't hardcode secrets)
+python-dotenv>=1.0.0
