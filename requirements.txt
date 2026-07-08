@@ -1,20 +1,51 @@
-# FinDirector — Session 2.1 requirements
-# Last updated: 2026-06-24
+# FinDirector — Full training environment
+# Last updated: 2026-06-30 (Session 2.4)
+
+# ============================================================================
+# Data acquisition (Session 2.1)
+# ============================================================================
 
 # SEC filings download
 sec-edgar-downloader>=5.0.0
 
-# Hugging Face datasets (for ConvFinQA and others)
+# Hugging Face datasets (ConvFinQA + splits loader for training)
 datasets>=2.20.0
 
 # Data manipulation
 pandas>=2.0.0
 
-# JSON line files (for synthetic data later)
+# JSON line files
 jsonlines>=4.0.0
 
-# Anthropic API (for synthetic data generation in Session 2.2)
+# ============================================================================
+# Synthetic data generation and labeling (Session 2.2)
+# ============================================================================
+
+# Anthropic API — teacher model for distillation
 anthropic>=0.40.0
 
-# Loads .env file into environment variables (so we don't hardcode secrets)
+# .env file loading (secrets management)
 python-dotenv>=1.0.0
+
+# ============================================================================
+# Fine-tuning (Session 2.4/2.5)
+# ============================================================================
+
+# PyTorch — base deep learning framework
+# On Colab this is pre-installed; explicit here for local envs
+torch>=2.3.0
+
+# Transformers — model + tokenizer for Qwen 2.5 7B Instruct
+transformers>=4.44.0
+
+# PEFT — parameter-efficient fine-tuning (LoRA implementation)
+peft>=0.13.0
+
+# TRL — SFTTrainer for supervised fine-tuning with proper loss masking
+trl>=0.11.0
+
+# Accelerate — mixed-precision + device management (used by Trainer)
+accelerate>=0.34.0
+
+# Weights & Biases — experiment tracking
+wandb>=0.17.0
