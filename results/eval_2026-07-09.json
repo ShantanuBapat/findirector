@@ -1,0 +1,53 @@
+{
+  "run": {
+    "date": "2026-07-09",
+    "session": "2.6",
+    "base_model": "Qwen/Qwen2.5-7B-Instruct",
+    "adapter": "AlHindi/findirector-directive-lora",
+    "dataset": "AlHindi/findirector-splits",
+    "split": "test.jsonl",
+    "n_examples": 156,
+    "decoding": "greedy (do_sample=False, temperature 0)",
+    "max_new_tokens": 256,
+    "hardware": "Colab L4 GPU (23 GB)",
+    "generation_seconds": 895,
+    "total_wall_seconds": 914
+  },
+  "overall": {
+    "accuracy": 0.9487,
+    "n_correct": 148,
+    "total": 156,
+    "n_parse_errors": 2,
+    "status_counts": {
+      "ok": 154,
+      "invalid_json": 2
+    }
+  },
+  "per_code": {
+    "clarify":   {"precision": 1.000, "recall": 0.842, "f1": 0.914, "support": 19},
+    "compute":   {"precision": 1.000, "recall": 1.000, "f1": 1.000, "support": 21},
+    "decline":   {"precision": 1.000, "recall": 0.931, "f1": 0.964, "support": 29},
+    "lookup":    {"precision": 0.909, "recall": 1.000, "f1": 0.952, "support": 30},
+    "meta":      {"precision": 0.957, "recall": 1.000, "f1": 0.978, "support": 22},
+    "research":  {"precision": 0.917, "recall": 1.000, "f1": 0.957, "support": 22},
+    "smalltalk": {"precision": 1.000, "recall": 1.000, "f1": 1.000, "support": 10}
+  },
+  "confusion_matrix": {
+    "labels": ["clarify", "compute", "decline", "lookup", "meta", "research", "smalltalk"],
+    "note": "rows = true, cols = predicted; parse errors excluded (no valid code produced)",
+    "rows": {
+      "clarify":   [16, 0, 0, 1, 0, 2, 0],
+      "compute":   [0, 21, 0, 0, 0, 0, 0],
+      "decline":   [0, 0, 27, 2, 0, 0, 0],
+      "lookup":    [0, 0, 0, 30, 0, 0, 0],
+      "meta":      [0, 0, 0, 0, 22, 0, 0],
+      "research":  [0, 0, 0, 0, 0, 22, 0],
+      "smalltalk": [0, 0, 0, 0, 0, 0, 10]
+    }
+  },
+  "misclassifications": [
+    {"true": "clarify", "predicted": "lookup",   "count": 1},
+    {"true": "clarify", "predicted": "research",  "count": 2},
+    {"true": "decline", "predicted": "lookup",   "count": 2}
+  ]
+}
