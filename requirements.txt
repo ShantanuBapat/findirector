@@ -56,3 +56,5 @@ wandb>=0.17.0
 
 # Jupyter notebook format (for programmatically generating Colab notebooks)
 nbformat>=5.10.0
+
+scikit-learn>=1.4
