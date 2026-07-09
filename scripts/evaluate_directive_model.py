@@ -5,6 +5,10 @@ answer for each of the 156 test queries (greedy / temperature 0), parses out the
 action_code, and reports overall accuracy, per-code precision/recall/F1, a
 confusion matrix, and a separate tally of parse failures.
 
+Results are always saved to results/:
+  - eval_<date>.json          aggregate metrics
+  - eval_<date>_details.jsonl one line per example (query, raw output, verdict)
+
 IMPORTANT — prompt fidelity:
 Training (format_for_sft) used NO custom system message. The instruction rode
 inside the USER turn as f"{instruction}\n\nQuery: {input}", and Qwen's chat
@@ -18,6 +22,8 @@ import os
 import re
 import time
 from collections import Counter
+from datetime import date
+from pathlib import Path
 
 import torch
 from huggingface_hub import hf_hub_download, login
@@ -37,6 +43,7 @@ BASE_MODEL_ID = "Qwen/Qwen2.5-7B-Instruct"
 ADAPTER_ID = "AlHindi/findirector-directive-lora"
 DATASET_ID = "AlHindi/findirector-splits"
 MAX_NEW_TOKENS = 256
+RESULTS_DIR = "results"
 
 # Record schema (from build_splits.py): instruction / input / output / _meta.
 INSTRUCTION_FIELD = "instruction"
@@ -220,20 +227,24 @@ def extract_action_code(generated_text: str) -> tuple[str | None, str]:
 
 
 def parse_and_score(
+    queries: list[str],
     predictions: list[str],
     ground_truth_codes: list[str],
 ) -> list[dict]:
     """Score each generated prediction against its ground-truth code.
 
     Returns one result dict per example:
-      {"predicted": str | None, "truth": str, "status": str, "correct": bool}
+      {"query", "raw_output", "predicted", "truth", "status", "correct"}
     Parse failures count as incorrect, but their status is retained so we can
-    report them separately from misclassifications.
+    report them separately from misclassifications. The full prompt and raw
+    generated text are kept so failures can be inspected without re-running.
     """
     results = []
-    for text, truth in zip(predictions, ground_truth_codes):
+    for query, text, truth in zip(queries, predictions, ground_truth_codes):
         code, status = extract_action_code(text)
         results.append({
+            "query": query,
+            "raw_output": text,
             "predicted": code,
             "truth": truth,
             "status": status,
@@ -285,7 +296,7 @@ def compute_metrics(results: list[dict]) -> dict:
 
 
 # --------------------------------------------------------------------------- #
-# Reporting + orchestration
+# Reporting + persistence + orchestration
 # --------------------------------------------------------------------------- #
 def get_device() -> torch.device:
     """CUDA if present, else Apple MPS, else CPU."""
@@ -318,6 +329,29 @@ def print_report(metrics: dict) -> None:
         print(f"  {labels[i][:10]:<10}" + "".join(f"{v:>8}" for v in row))
 
 
+def save_results(metrics: dict, results: list[dict], out_dir: str = RESULTS_DIR) -> None:
+    """Persist aggregate metrics (JSON) and per-example detail (JSONL).
+
+    The details file keeps the full prompt and raw generated text for every
+    example, so failures can be inspected later without re-running generation.
+    """
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    stamp = date.today().isoformat()
+
+    metrics_path = out / f"eval_{stamp}.json"
+    with open(metrics_path, "w", encoding="utf-8") as f:
+        json.dump(metrics, f, indent=2)
+
+    details_path = out / f"eval_{stamp}_details.jsonl"
+    with open(details_path, "w", encoding="utf-8") as f:
+        for r in results:
+            f.write(json.dumps(r) + "\n")
+
+    print(f"\nSaved metrics       -> {metrics_path}")
+    print(f"Saved per-example   -> {details_path}")
+
+
 def main() -> None:
     total_start = time.time()
     login(token=os.environ.get("HF_TOKEN"))   # private model + dataset
@@ -343,9 +377,10 @@ def main() -> None:
             print(f"  {i + 1}/{len(user_contents)} done ({time.time() - gen_start:.0f}s elapsed)")
     print(f"Generation finished in {time.time() - gen_start:.0f}s")
 
-    results = parse_and_score(predictions, truths)
+    results = parse_and_score(user_contents, predictions, truths)
     metrics = compute_metrics(results)
     print_report(metrics)
+    save_results(metrics, results)
 
     print(f"\nTotal wall time: {time.time() - total_start:.0f}s")
 
