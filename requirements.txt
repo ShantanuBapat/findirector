@@ -49,3 +49,10 @@ accelerate>=0.34.0
 
 # Weights & Biases — experiment tracking
 wandb>=0.17.0
+
+# ============================================================================
+# Notebook generation (Session 2.5)
+# ============================================================================
+
+# Jupyter notebook format (for programmatically generating Colab notebooks)
+nbformat>=5.10.0
