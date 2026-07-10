@@ -9,6 +9,34 @@ idea came from.
 
 ---
 
+## Adaptive chunk size by section type
+
+**Date:** 2026-07-10 · **Origin:** Session 3.1 · **Target:** post-v1 (tuning)
+
+**Context.** v1 uses a uniform ~512-token target across all sections. But sections
+differ in information density: financial statements (Item 8) are fact-dense and
+favor tight, precise chunks; narrative sections (MD&A / Item 7, Risk Factors /
+Item 1A) are discursive and favor larger chunks that preserve argument context.
+
+**The idea.** Vary the target chunk size (and possibly overlap) by section type —
+smaller for fact-dense/tabular sections, larger for narrative — via a per-Item
+config mapping.
+
+**Why it matters.** A uniform size compromises both ends: it's larger than ideal
+for precise `lookup`/`compute` retrieval and smaller than ideal for
+context-hungry `research`. Adaptive sizing could improve both at once.
+
+**Caveats / why deferred.**
+- Adds config complexity.
+- The gain is an empirical claim — needs the Week 4 retrieval eval to confirm
+  variable sizing actually beats uniform (measure, don't assume). Gains may be
+  marginal.
+
+**Rough effort.** Low-medium: parameterize the chunker by section, tune against
+the retrieval eval.
+
+---
+
 ## Expand corpus coverage (companies, years, filing types)
 
 **Date:** 2026-07-10 · **Origin:** Session 3.1 planning · **Target:** post-v1
