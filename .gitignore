@@ -84,3 +84,6 @@ tmp/
 dist/
 build/
 *.egg
+
+# Track result artifacts even though data .jsonl is ignored above
+!results/*.jsonl

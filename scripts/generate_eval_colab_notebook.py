@@ -1,8 +1,9 @@
 """
 Generate the Colab evaluation notebook (notebooks/eval_on_colab.ipynb).
 
-The notebook clones the FinDirector repo, sets up the environment, and runs
-the evaluation script on Colab's L4 GPU against the held-out test set.
+The notebook clones the FinDirector repo, sets up the environment, runs the
+evaluation script on Colab's L4 GPU against the held-out test set, and prints
+any failures (misclassifications + parse errors) for inspection.
 
 Usage:
     python -m scripts.generate_eval_colab_notebook
@@ -73,8 +74,8 @@ held-out test set (greedy decoding, temperature 0).
 2. Clone the FinDirector repo
 3. Install requirements
 4. Load `HF_TOKEN` from Colab Secrets manager
-5. Run `scripts/evaluate_directive_model.py`
-6. Read the accuracy / confusion-matrix report from the output
+5. Run `scripts/evaluate_directive_model.py` (saves results/ files)
+6. Inspect any failures (misclassifications + parse errors)
     """))
 
     # ========================================================================
@@ -108,11 +109,17 @@ Get the latest evaluation script and config from GitHub.
 
 Install all dependencies. Colab has some pre-installed but we force upgrade
 to match our pinned versions (this also picks up scikit-learn for metrics).
+
+**Note:** Colab ships an old `torchao` that PEFT rejects on adapter load. Upgrade
+it here, then **Runtime -> Restart session** before running the eval so the fresh
+version is the one imported.
     """))
     nb.cells.append(code_cell("""
 # Install all requirements
 !pip install -q --upgrade pip
 !pip install -q -r requirements.txt
+# Fix PEFT's torchao version check (Colab ships < 0.16.0). Restart runtime after.
+!pip install -q --upgrade torchao
     """))
 
     # ========================================================================
@@ -146,31 +153,69 @@ print(f"HF_TOKEN length: {len(os.environ['HF_TOKEN'])}")
 ## Step 5 — Run Evaluation
 
 Execute the evaluation script. It downloads the LoRA adapter + test split from
-HF Hub, generates on all 156 examples, and prints the report to this output.
+HF Hub, generates on all 156 examples, prints the report, and saves:
+- `results/eval_<date>.json` (metrics)
+- `results/eval_<date>_details.jsonl` (per-example, with raw output)
 
 **Expected duration:** 5-20 minutes on L4 GPU.
     """))
     nb.cells.append(code_cell("""
-# Run evaluation; output (accuracy, per-code P/R/F1, confusion matrix) streams here
+# Run evaluation; report streams here, result files written to results/
 !python -m scripts.evaluate_directive_model
     """))
 
     # ========================================================================
-    # Cell 7: Summary
+    # Cell 7: Inspect failures
+    # ========================================================================
+    nb.cells.append(markdown_cell("""
+## Step 6 — Inspect Failures
+
+Load the per-example detail file and print every failure (misclassification or
+parse error), including the raw generated output. Set `DETAILS` to the dated
+file the run just wrote.
+    """))
+    nb.cells.append(code_cell("""
+import glob
+import json
+
+# Pick the most recent details file the eval run wrote
+detail_files = sorted(glob.glob("results/eval_*_details.jsonl"))
+DETAILS = detail_files[-1]
+print(f"Reading {DETAILS}\\n" + "=" * 70)
+
+with open(DETAILS) as f:
+    rows = [json.loads(line) for line in f if line.strip()]
+
+failures = [r for r in rows if not r["correct"]]
+print(f"{len(failures)} failures out of {len(rows)}")
+
+for i, r in enumerate(failures, 1):
+    # query stores the full prompt; strip to the user's actual question
+    q = r["query"].split("Query:", 1)[-1].strip()
+    verdict = r["predicted"] if r["status"] == "ok" else f"PARSE_ERROR({r['status']})"
+    print(f"\\n[{i}] true={r['truth']}  ->  got={verdict}")
+    print(f"    query: {q}")
+    print(f"    raw:   {r['raw_output'][:300]}")
+    print("-" * 70)
+    """))
+
+    # ========================================================================
+    # Cell 8: Summary
     # ========================================================================
     nb.cells.append(markdown_cell("""
 ## Done!
 
-The report above shows:
-- **Overall accuracy** over all 156 test examples
-- **Parse-error tally** (tracked separately from misclassifications)
-- **Per-code** precision / recall / F1
-- **Confusion matrix** (rows = true, cols = predicted)
+The report and the failure listing above show the model's classification quality
+and the specific queries it got wrong.
+
+**Result files written to `results/`:**
+- `eval_<date>.json` — metrics
+- `eval_<date>_details.jsonl` — per-example detail (download to commit)
 
 **Next steps (Session 2.6 analysis):**
 - Read per-code accuracy and the confusion matrix
-- Inspect the compute-vs-lookup boundary (expected tricky pair)
-- Document findings and commit the eval script's results
+- Inspect failures (see the list above) — separate real errors from label noise
+- Document findings and commit the results
     """))
 
     return nb

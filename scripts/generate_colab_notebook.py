@@ -115,6 +115,8 @@ force upgrade to match our pinned versions.
 # Install all requirements
 !pip install -q --upgrade pip
 !pip install -q -r requirements.txt
+# Fix PEFT's torchao version check (Colab ships < 0.16.0). Restart runtime after.
+!pip install -q --upgrade torchao
     """))
 
     # ========================================================================
