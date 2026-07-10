@@ -58,3 +58,4 @@ wandb>=0.17.0
 nbformat>=5.10.0
 
 scikit-learn>=1.4
+sec-parser==0.58.1

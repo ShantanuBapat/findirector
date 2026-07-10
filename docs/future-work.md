@@ -134,6 +134,11 @@ the class of query where wrong numbers are most damaging for a financial tool.
   path to design, route, and evaluate — scope creep for v1.
 - v1 should prove the core directive-driven RAG loop first; this augments it.
 
+**Candidate implementation.** `edgartools` — evaluated during Session 3.2 as the
+parsing library. It offers native 10-K support and free inline-XBRL structured
+facts (exactly Thread B), but was deferred to keep v1 lean (`sec-parser` chosen
+instead). It becomes the natural tool if/when this XBRL path is built.
+
 **Rough effort.** Medium. Thread A is a modest extension of the existing chunker.
 Thread B is a larger design effort (structured-data store + a numeric-lookup
 retrieval path + routing logic to choose it over semantic RAG).

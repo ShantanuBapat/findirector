@@ -40,8 +40,25 @@ wins because 10-Ks have a rigid, regular Item structure.
 5. Detect Item / section boundaries.
 6. Chunk each section (parameters below), tagging every chunk with metadata.
 
-Tooling chosen in 3.2 — candidates: `sec-parser` / `edgartools` for structured
-filing parsing, or BeautifulSoup + boundary logic.
+**Tooling (chosen in 3.2): `sec-parser` 0.58.1.** Verified empirically against
+real filings. Two findings shaped the approach:
+
+- The released 0.58.1 has **no `Edgar10KParser`** (it exists only in the dev
+  docs); only `Edgar10QParser` ships. `Edgar10QParser` extracts elements
+  (text, tables, titles) from 10-Ks fine, but its `section_type` classifier
+  applies the **10-Q** taxonomy and mislabels 10-K items, and it types item
+  headings inconsistently (some `TopSectionTitle`, some `TitleElement`).
+- Therefore we **detect sections ourselves**: scan the flat element list and
+  treat any element whose text matches an item heading (via `identify_section`,
+  an item-number → section-name map we own) as a section boundary. We do **not**
+  use `sec-parser`'s `TopSectionTitle`/`section_type`. The resulting
+  `InvalidTopSectionIn10Q` warnings are suppressed deliberately.
+
+See `exploration/` for the probe scripts that established this.
+
+The submission-unwrap step (extracting the `<TYPE>10-K` HTML from
+`full-submission.txt`) is ours — `sec-parser` expects the HTML body. It also
+strips the iXBRL `<XBRL>`/`<?xml?>` prefix so the parser receives clean HTML.
 
 ## Chunk parameters
 
