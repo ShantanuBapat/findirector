@@ -381,6 +381,18 @@ def ticker_from_path(filing_path) -> str:
     raise ValueError(f"Could not find ticker in path: {filing_path}")
 
 
+def accession_from_path(filing_path) -> str:
+    """Extract the accession number from a filing path.
+
+    Layout: .../sec-edgar-filings/<TICKER>/10-K/<ACCESSION>/full-submission.txt
+    The accession number is the file's immediate parent directory. It is SEC's
+    globally-unique, stable identifier for the submission -- the identity key for
+    delta processing -- and reading it from the path costs no file I/O.
+    """
+    from pathlib import Path
+    return Path(filing_path).parent.name
+
+
 # --------------------------------------------------------------------------- #
 # Orchestration: run the full chain over the corpus
 # --------------------------------------------------------------------------- #
@@ -399,6 +411,7 @@ def chunk_filing(filing_path) -> list[dict]:
     html = extract_primary_document(text)
     ticker = ticker_from_path(filing_path)
     metadata = extract_filing_metadata(text, ticker)
+    metadata["accession_number"] = accession_from_path(filing_path)
 
     with warnings.catch_warnings():
         # Suppress InvalidTopSectionIn10Q: we do our own section detection.
@@ -409,37 +422,135 @@ def chunk_filing(filing_path) -> list[dict]:
     return split_records(records)
 
 
-def chunk_corpus(root, verbose: bool = True) -> tuple[list[dict], list[tuple[str, str]]]:
-    """Chunk every 10-K under `root`, returning (all_chunks, errors).
+import json
 
-    Iterates .../sec-edgar-filings/<TICKER>/10-K/<accession>/full-submission.txt.
-    Failures are isolated per-filing: a filing that raises is recorded in
-    `errors` and skipped, so one malformed filing doesn't abort the corpus build.
+
+def load_processed_accessions(corpus_path) -> set[str]:
+    """Read an existing corpus.jsonl and return the accession numbers in it.
+
+    This is the delta state: the output file is the single source of truth for
+    what has already been processed, so there is no separate manifest to drift.
+    Returns an empty set if the file does not exist yet.
+    """
+    corpus_path = Path(corpus_path)
+    if not corpus_path.exists():
+        return set()
+    seen: set[str] = set()
+    with corpus_path.open() as fh:
+        for line in fh:
+            line = line.strip()
+            if line:
+                seen.add(json.loads(line)["accession_number"])
+    return seen
+
+
+def append_chunks(corpus_path, chunks: list[dict]) -> None:
+    """Append chunk records to corpus.jsonl (one JSON object per line)."""
+    corpus_path = Path(corpus_path)
+    corpus_path.parent.mkdir(parents=True, exist_ok=True)
+    with corpus_path.open("a") as fh:
+        for chunk in chunks:
+            fh.write(json.dumps(chunk) + "\n")
+
+
+def chunk_corpus(root, corpus_path, force: bool = False, verbose: bool = True
+                 ) -> tuple[int, int, list[tuple[str, str]]]:
+    """Chunk 10-Ks under `root`, appending new chunks to `corpus_path` (JSONL).
+
+    Delta by default: filings whose accession number is already present in
+    corpus_path are skipped. Pass force=True to reprocess everything (e.g. after
+    a chunker change) -- this clears the existing corpus first.
+
+    Returns (n_filings_processed, n_filings_skipped, errors).
     """
     root = Path(root)
+    corpus_path = Path(corpus_path)
     files = sorted(root.glob("*/10-K/*/full-submission.txt"))
     if not files:
         raise ValueError(f"No filings found under {root}")
 
-    all_chunks: list[dict] = []
+    if force and corpus_path.exists():
+        corpus_path.unlink()
+        if verbose:
+            print(f"force=True: cleared existing {corpus_path}")
+
+    already = load_processed_accessions(corpus_path)
+    if verbose and already:
+        print(f"{len(already)} filings already in corpus; processing delta only")
+
+    processed = skipped = total_chunks = 0
     errors: list[tuple[str, str]] = []
     start = time.time()
 
     for i, filing_path in enumerate(files, start=1):
+        if accession_from_path(filing_path) in already:
+            skipped += 1
+            continue
         try:
-            all_chunks.extend(chunk_filing(filing_path))
+            chunks = chunk_filing(filing_path)
+            append_chunks(corpus_path, chunks)
+            total_chunks += len(chunks)
+            processed += 1
         except Exception as exc:  # noqa: BLE001 - isolate per-filing failures
             errors.append((str(filing_path), repr(exc)))
             if verbose:
                 print(f"  ERROR [{i}/{len(files)}] {filing_path}: {exc!r}")
 
-        if verbose and (i % 10 == 0 or i == len(files)):
+        if verbose and (processed % 10 == 0 and processed > 0):
             elapsed = time.time() - start
-            print(f"  {i}/{len(files)} filings | {len(all_chunks)} chunks "
+            print(f"  processed {processed} | {total_chunks} chunks "
                   f"| {len(errors)} errors | {elapsed:.0f}s")
 
     if verbose:
-        ok = len(files) - len(errors)
-        print(f"\nDone: {len(all_chunks)} chunks from {ok}/{len(files)} "
-              f"filings in {time.time() - start:.0f}s")
-    return all_chunks, errors
+        print(f"\nDone: {processed} filings processed, {skipped} skipped, "
+              f"{total_chunks} new chunks in {time.time() - start:.0f}s")
+    return processed, skipped, errors
+
+
+# --------------------------------------------------------------------------- #
+# CLI entry point
+# --------------------------------------------------------------------------- #
+def main() -> int:
+    """Run the chunking pipeline as a script.
+
+    Delta by default (skips filings already in the corpus). Use --force to
+    rebuild the whole corpus from scratch.
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Chunk SEC 10-K filings into a tagged JSONL corpus "
+                    "(delta by default).",
+    )
+    parser.add_argument(
+        "--root", default="data/raw/sec_edgar/sec-edgar-filings",
+        help="Root directory of downloaded filings.",
+    )
+    parser.add_argument(
+        "--corpus", default="data/chunks/corpus.jsonl",
+        help="Output JSONL corpus path (appended to).",
+    )
+    parser.add_argument(
+        "--force", action="store_true",
+        help="Reprocess all filings, clearing the existing corpus first.",
+    )
+    parser.add_argument(
+        "--quiet", action="store_true", help="Suppress progress output.",
+    )
+    args = parser.parse_args()
+
+    processed, skipped, errors = chunk_corpus(
+        args.root, args.corpus, force=args.force, verbose=not args.quiet,
+    )
+
+    if errors:
+        print(f"\n{len(errors)} filing(s) failed:")
+        for filing_path, err in errors:
+            print(f"  {filing_path}: {err}")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+    raise SystemExit(main())
