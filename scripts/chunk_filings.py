@@ -89,9 +89,11 @@ _ITEM_TO_SECTION = {
     "16": "form_summary",
 }
 
-# Matches "Item 7." / "Item 1A." / "Item 7a" at the start of a title, capturing
-# the item number+suffix. \xa0 (non-breaking space) is treated as whitespace.
-_ITEM_RE = re.compile(r"item\s*(\d+[a-c]?)\b", re.IGNORECASE)
+# Matches an item heading ANCHORED at the start of the text, capturing the item
+# number+suffix, e.g. "Item 7." / "Item 1A." The anchor + trailing separator
+# prevents matching item-like substrings buried in body sentences. \xa0
+# (non-breaking space) is normalized to a space before matching.
+_ITEM_RE = re.compile(r"^\s*item\s+(\d+[a-c]?)\s*[.\-\u2013\u2014:]", re.IGNORECASE)
 
 
 def identify_section(title_text: str) -> str | None:
@@ -101,7 +103,225 @@ def identify_section(title_text: str) -> str | None:
     None for Part headers ("PART I") and anything that isn't a recognized item.
     """
     normalized = title_text.replace("\xa0", " ")
-    match = _ITEM_RE.search(normalized)
+    match = _ITEM_RE.match(normalized)
     if match is None:
         return None
     return _ITEM_TO_SECTION.get(match.group(1).lower())
+
+
+# --------------------------------------------------------------------------- #
+# Section walk: flat elements -> section-tagged records
+# --------------------------------------------------------------------------- #
+import sec_parser as sp
+
+
+def walk_sections(elements: list, metadata: dict) -> list[dict]:
+    """Group a flat list of parsed elements into section-tagged records.
+
+    Walks the ordered element list, carrying the current section forward:
+    - an element whose text maps to an item (via identify_section) sets the
+      current section, flushing the previous section's accumulated narrative;
+    - a TableElement is emitted immediately as its own atomic Markdown record;
+    - other text (TextElement / SupplementaryText) accumulates into the current
+      section's narrative buffer;
+    - noise (page numbers/headers, table-of-contents, images, empty) is skipped.
+
+    Each returned record is `metadata` plus:
+        {"section": str | None, "content_type": "narrative" | "table", "text": str}
+
+    `section` is None for content before the first recognized item heading.
+    """
+    records: list[dict] = []
+    current_section: str | None = None
+    narrative: list[str] = []
+
+    def flush_narrative() -> None:
+        """Emit the accumulated narrative for the current section, if any."""
+        if not narrative:
+            return
+        text = "\n\n".join(narrative).strip()
+        if text:
+            records.append({
+                **metadata,
+                "section": current_section,
+                "content_type": "narrative",
+                "text": text,
+            })
+        narrative.clear()
+
+    for element in elements:
+        text = element.text.replace("\xa0", " ").strip()
+
+        # 1. Section boundary? Only TITLE-type elements can be item headings.
+        #    (Verified: every 10-K item heading parses as TopSectionTitle or
+        #    TitleElement, never TextElement/SupplementaryText. Restricting to
+        #    titles + the anchored regex prevents body sentences that mention an
+        #    item from being misread as a section switch.)
+        if isinstance(element, (sp.TopSectionTitle, sp.TitleElement)):
+            section = identify_section(text)
+            if section is not None:
+                flush_narrative()           # close out the previous section
+                current_section = section
+                continue
+
+        # 2. Table -> atomic Markdown record, tagged with the current section.
+        if isinstance(element, sp.TableElement):
+            records.append({
+                **metadata,
+                "section": current_section,
+                "content_type": "table",
+                "text": element.table_to_markdown(),
+            })
+            continue
+
+        # 3. Narrative text -> accumulate.
+        if isinstance(element, (sp.TextElement, sp.SupplementaryText)):
+            if text:
+                narrative.append(text)
+            continue
+
+        # 4. Everything else (TitleElement sub-headings, page numbers, TOC,
+        #    images, empty) is skipped for narrative purposes.
+
+    flush_narrative()                        # flush the final section
+    return records
+
+
+# --------------------------------------------------------------------------- #
+# Size-splitting: section records -> embedding-ready chunks
+# --------------------------------------------------------------------------- #
+import tiktoken
+
+# Generic encoding for token counting. Chosen to keep the embedding-model choice
+# open (counts are close across modern tokenizers). Validate against the chosen
+# model's real tokenizer when embeddings are finalized; re-split if any chunk
+# overflows its true limit.
+_ENCODING = tiktoken.get_encoding("cl100k_base")
+
+# Slightly conservative vs the ~512 design target, so generic-token chunks stay
+# within a real 512-token embedding limit even if that tokenizer counts higher.
+TARGET_TOKENS = 480
+OVERLAP_TOKENS = 64
+# A sentence-ish split point for paragraphs that exceed the target on their own.
+_SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+def _count_tokens(text: str) -> int:
+    return len(_ENCODING.encode(text))
+
+
+def _split_oversized(text: str) -> list[str]:
+    """Split a single over-target block, preferring sentence boundaries.
+
+    Used only when one paragraph alone exceeds TARGET_TOKENS. Falls back to a
+    hard token slice if a single 'sentence' is still too big (e.g. a giant
+    run-on or delimiter-free text).
+    """
+    sentences = _SENTENCE_RE.split(text)
+    pieces: list[str] = []
+    buf: list[str] = []
+    buf_tokens = 0
+
+    for sent in sentences:
+        st = _count_tokens(sent)
+        if st > TARGET_TOKENS:
+            # Flush buffer, then hard-slice this sentence by tokens.
+            if buf:
+                pieces.append(" ".join(buf))
+                buf, buf_tokens = [], 0
+            ids = _ENCODING.encode(sent)
+            for i in range(0, len(ids), TARGET_TOKENS):
+                pieces.append(_ENCODING.decode(ids[i:i + TARGET_TOKENS]))
+            continue
+        if buf_tokens + st > TARGET_TOKENS and buf:
+            pieces.append(" ".join(buf))
+            buf, buf_tokens = [], 0
+        buf.append(sent)
+        buf_tokens += st
+
+    if buf:
+        pieces.append(" ".join(buf))
+    return pieces
+
+
+def _pack_paragraphs(text: str) -> list[str]:
+    """Pack paragraphs into ~TARGET_TOKENS chunks with ~OVERLAP_TOKENS overlap.
+
+    Prefers breaking between paragraphs; only splits within a paragraph when the
+    paragraph alone exceeds the target. Overlap carries the tail of one chunk
+    into the start of the next so boundary-spanning facts survive.
+    """
+    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    # Pre-split any paragraph that is itself over the target.
+    units: list[str] = []
+    for p in paragraphs:
+        if _count_tokens(p) > TARGET_TOKENS:
+            units.extend(_split_oversized(p))
+        else:
+            units.append(p)
+
+    # Reserve room for the overlap seed so seed + content stays within TARGET.
+    content_budget = TARGET_TOKENS - OVERLAP_TOKENS
+
+    def overlap_tail(buffer: list[str]) -> tuple[list[str], int]:
+        """Trailing paragraphs of `buffer` totaling up to OVERLAP_TOKENS."""
+        tail, tok = [], 0
+        for prev in reversed(buffer):
+            pt = _count_tokens(prev)
+            if tok + pt > OVERLAP_TOKENS:
+                break
+            tail.insert(0, prev)
+            tok += pt
+        return tail, tok
+
+    chunks: list[str] = []
+    buf: list[str] = []
+    buf_tokens = 0
+
+    for unit in units:
+        ut = _count_tokens(unit)
+
+        # A unit that already exceeds the content budget stands alone: flush any
+        # pending buffer, emit the unit as its own chunk, and add NO overlap on
+        # top of it (it is already near TARGET). This is the case that otherwise
+        # overflowed: a big unit sitting in the buffer + an overlap seed > TARGET.
+        if ut > content_budget:
+            if buf:
+                chunks.append("\n\n".join(buf))
+            chunks.append(unit)
+            buf, buf_tokens = [], 0
+            continue
+
+        if buf_tokens + ut > content_budget and buf:
+            chunks.append("\n\n".join(buf))
+            buf, buf_tokens = overlap_tail(buf)
+        buf.append(unit)
+        buf_tokens += ut
+
+    if buf:
+        chunks.append("\n\n".join(buf))
+    return chunks
+
+
+def split_records(records: list[dict]) -> list[dict]:
+    """Turn section records into embedding-ready chunks.
+
+    Table records pass through atomically. Narrative records are packed into
+    ~TARGET_TOKENS chunks with ~OVERLAP_TOKENS overlap. Every output chunk gets
+    a `chunk_index` (its position within its source section+type) and a
+    `n_tokens` count.
+    """
+    chunks: list[dict] = []
+    for record in records:
+        base = {k: v for k, v in record.items() if k != "text"}
+
+        if record["content_type"] == "table":
+            text = record["text"]
+            chunks.append({**base, "text": text,
+                           "chunk_index": 0, "n_tokens": _count_tokens(text)})
+            continue
+
+        for i, piece in enumerate(_pack_paragraphs(record["text"])):
+            chunks.append({**base, "text": piece,
+                           "chunk_index": i, "n_tokens": _count_tokens(piece)})
+    return chunks

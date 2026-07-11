@@ -59,3 +59,4 @@ nbformat>=5.10.0
 
 scikit-learn>=1.4
 sec-parser==0.58.1
+tiktoken==0.13.0
