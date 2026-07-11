@@ -7,7 +7,7 @@ RAG pipeline. This is the spec the ingestion pipeline (3.2) implements.
 
 ## Corpus
 
-- 20 tickers, 10-K only, fiscal years 2022-2024 (3 filings each, 60 total).
+- 20 tickers, 10-K only — the 3 most recent 10-Ks per ticker as downloaded (60 total). Actual fiscal years span 2023-2026 depending on each filer's fiscal calendar (e.g. Jan/Feb year-ends like WMT, NVDA reach FY2026). `fiscal_year` is taken from CONFORMED PERIOD OF REPORT.
 - Stored at `data/raw/sec_edgar/sec-edgar-filings/<TICKER>/10-K/<accession>/full-submission.txt`.
 - Format: full SEC submission wrapper (`<SEC-HEADER>` + multiple `<DOCUMENT>`
   blocks). The 10-K body is inline XBRL (iXBRL) HTML — structure and tables

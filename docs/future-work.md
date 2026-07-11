@@ -9,6 +9,33 @@ idea came from.
 
 ---
 
+## Fiscal-year query mapping for non-December filers
+
+**Date:** 2026-07-10 · **Origin:** Session 3.2 metadata extraction · **Target:** Week 3/4 (retrieval)
+
+**Context.** `fiscal_year` is derived from CONFORMED PERIOD OF REPORT and follows
+the filer's own convention. For Jan/Feb fiscal-year-ends this can surprise users:
+WMT's filing with period 20260131 is tagged `fiscal_year=2026` (Walmart's "FY2026"),
+and NVDA similarly reaches 2026. A user asking for "Walmart 2025" may mean the
+period that ended Jan 2026, or the one that ended Jan 2025.
+
+**The idea.** At retrieval time, when the directive model extracts `year: N`,
+map it to the right filing(s) accounting for fiscal calendar — e.g. consider both
+the `fiscal_year` label and the `period_of_report` date, or expand the year
+filter by ±1 for known non-December filers. The full `period_of_report` (YYYYMMDD)
+is already stored on every chunk as provenance to support this.
+
+**Why it matters.** Prevents "correct-but-surprising" misses where a query for a
+calendar year silently retrieves the wrong fiscal filing.
+
+**Caveats.** Only affects the handful of non-December filers in the corpus. Low
+urgency until retrieval is built; noting now so it is not discovered as a silent
+miss later.
+
+**Rough effort.** Low: a year-to-filing resolution step in the retrieval layer.
+
+---
+
 ## Adaptive chunk size by section type
 
 **Date:** 2026-07-10 · **Origin:** Session 3.1 · **Target:** post-v1 (tuning)

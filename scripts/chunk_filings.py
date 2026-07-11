@@ -233,7 +233,10 @@ def _split_oversized(text: str) -> list[str]:
             for i in range(0, len(ids), TARGET_TOKENS):
                 pieces.append(_ENCODING.decode(ids[i:i + TARGET_TOKENS]))
             continue
-        if buf_tokens + st > TARGET_TOKENS and buf:
+        # Use the REAL joined token count, not the sum of parts: token counts
+        # are not additive across concatenation (joining adds seam tokens), so
+        # a running sum can undercount and emit an over-limit piece.
+        if buf and _count_tokens(" ".join(buf + [sent])) > TARGET_TOKENS:
             pieces.append(" ".join(buf))
             buf, buf_tokens = [], 0
         buf.append(sent)
@@ -292,7 +295,9 @@ def _pack_paragraphs(text: str) -> list[str]:
             buf, buf_tokens = [], 0
             continue
 
-        if buf_tokens + ut > content_budget and buf:
+        # Real joined count (see note in _split_oversized): the budget must be
+        # checked against the actual chunk text, not the additive sum.
+        if buf and _count_tokens("\n\n".join(buf + [unit])) > content_budget:
             chunks.append("\n\n".join(buf))
             buf, buf_tokens = overlap_tail(buf)
         buf.append(unit)
@@ -325,3 +330,116 @@ def split_records(records: list[dict]) -> list[dict]:
             chunks.append({**base, "text": piece,
                            "chunk_index": i, "n_tokens": _count_tokens(piece)})
     return chunks
+
+
+# --------------------------------------------------------------------------- #
+# Metadata extraction
+# --------------------------------------------------------------------------- #
+_SUBMISSION_TYPE_RE = re.compile(r"^CONFORMED SUBMISSION TYPE:\s*(.+)$", re.MULTILINE)
+_PERIOD_OF_REPORT_RE = re.compile(r"^CONFORMED PERIOD OF REPORT:\s*(\d{8})", re.MULTILINE)
+
+
+def extract_filing_metadata(submission_text: str, ticker: str) -> dict:
+    """Derive chunk metadata from a filing's SEC-HEADER and its ticker.
+
+    - ticker: passed in (read from the directory path by the caller).
+    - filing_type: from CONFORMED SUBMISSION TYPE (authoritative).
+    - fiscal_year: the YEAR of CONFORMED PERIOD OF REPORT (the period the filing
+      reports on), NOT the filing date. For Jan/Feb fiscal-year-ends this is the
+      label the company uses (e.g. WMT period 20240131 -> fiscal_year 2024).
+
+    Raises ValueError if a required header field is missing.
+    """
+    type_match = _SUBMISSION_TYPE_RE.search(submission_text)
+    if type_match is None:
+        raise ValueError("CONFORMED SUBMISSION TYPE not found in header")
+
+    period_match = _PERIOD_OF_REPORT_RE.search(submission_text)
+    if period_match is None:
+        raise ValueError("CONFORMED PERIOD OF REPORT not found in header")
+
+    return {
+        "ticker": ticker,
+        "filing_type": type_match.group(1).strip(),
+        "fiscal_year": int(period_match.group(1)[:4]),  # YYYY of YYYYMMDD
+        "period_of_report": period_match.group(1),       # full YYYYMMDD, for provenance
+    }
+
+
+def ticker_from_path(filing_path) -> str:
+    """Extract the ticker from a sec-edgar-downloader filing path.
+
+    Layout: .../sec-edgar-filings/<TICKER>/10-K/<accession>/full-submission.txt
+    The ticker is the directory three levels above the file.
+    """
+    from pathlib import Path
+    parts = Path(filing_path).parts
+    # Find the 'sec-edgar-filings' anchor and take the next component.
+    for i, part in enumerate(parts):
+        if part == "sec-edgar-filings" and i + 1 < len(parts):
+            return parts[i + 1]
+    raise ValueError(f"Could not find ticker in path: {filing_path}")
+
+
+# --------------------------------------------------------------------------- #
+# Orchestration: run the full chain over the corpus
+# --------------------------------------------------------------------------- #
+import time
+import warnings
+from pathlib import Path
+
+
+def chunk_filing(filing_path) -> list[dict]:
+    """Run the full chunking chain on a single filing.
+
+    unwrap -> derive metadata -> parse (sec-parser) -> walk sections -> split.
+    Returns the filing's list of chunk dicts.
+    """
+    text = Path(filing_path).read_text()
+    html = extract_primary_document(text)
+    ticker = ticker_from_path(filing_path)
+    metadata = extract_filing_metadata(text, ticker)
+
+    with warnings.catch_warnings():
+        # Suppress InvalidTopSectionIn10Q: we do our own section detection.
+        warnings.simplefilter("ignore")
+        elements = sp.Edgar10QParser().parse(html)
+
+    records = walk_sections(elements, metadata)
+    return split_records(records)
+
+
+def chunk_corpus(root, verbose: bool = True) -> tuple[list[dict], list[tuple[str, str]]]:
+    """Chunk every 10-K under `root`, returning (all_chunks, errors).
+
+    Iterates .../sec-edgar-filings/<TICKER>/10-K/<accession>/full-submission.txt.
+    Failures are isolated per-filing: a filing that raises is recorded in
+    `errors` and skipped, so one malformed filing doesn't abort the corpus build.
+    """
+    root = Path(root)
+    files = sorted(root.glob("*/10-K/*/full-submission.txt"))
+    if not files:
+        raise ValueError(f"No filings found under {root}")
+
+    all_chunks: list[dict] = []
+    errors: list[tuple[str, str]] = []
+    start = time.time()
+
+    for i, filing_path in enumerate(files, start=1):
+        try:
+            all_chunks.extend(chunk_filing(filing_path))
+        except Exception as exc:  # noqa: BLE001 - isolate per-filing failures
+            errors.append((str(filing_path), repr(exc)))
+            if verbose:
+                print(f"  ERROR [{i}/{len(files)}] {filing_path}: {exc!r}")
+
+        if verbose and (i % 10 == 0 or i == len(files)):
+            elapsed = time.time() - start
+            print(f"  {i}/{len(files)} filings | {len(all_chunks)} chunks "
+                  f"| {len(errors)} errors | {elapsed:.0f}s")
+
+    if verbose:
+        ok = len(files) - len(errors)
+        print(f"\nDone: {len(all_chunks)} chunks from {ok}/{len(files)} "
+              f"filings in {time.time() - start:.0f}s")
+    return all_chunks, errors
