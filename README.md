@@ -301,7 +301,7 @@ For financial services specifically, this pattern lets you answer the regulator'
 
 ## License
 
-Private project; license TBD when made public.
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
 
