@@ -87,3 +87,6 @@ build/
 
 # Track result artifacts even though data .jsonl is ignored above
 !results/*.jsonl
+
+# Local secrets (never commit; use .env.example as the template)
+.env

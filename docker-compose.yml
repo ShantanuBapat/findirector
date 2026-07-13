@@ -1,0 +1,31 @@
+# Local development environment for FinDirector.
+# `docker compose up -d` starts the pgvector database; `docker compose down`
+# stops and removes the container (data persists in the named volume).
+# Secrets/config come from .env (gitignored); see .env.example for the keys.
+# This is the single-machine, declarative precursor to the Kubernetes manifests
+# used for production (Week 5).
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: findirector-pg
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  # Reuse the volume created by the earlier `docker run` so existing data
+  # (schema + pgvector extension) is preserved.
+  pgdata:
+    name: findirector_pgdata
+    external: true
