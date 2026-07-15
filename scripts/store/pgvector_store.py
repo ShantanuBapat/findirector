@@ -84,10 +84,10 @@ class PgVectorStore(VectorStore):
         sql = f"""
             SELECT ticker, fiscal_year, filing_type, accession_number,
                    section, content_type, chunk_index, n_tokens, text,
-                   1 - (embedding <=> %s) AS score
+                   1 - (embedding <=> %s::vector) AS score
             FROM chunks
             {where_sql}
-            ORDER BY embedding <=> %s
+            ORDER BY embedding <=> %s::vector
             LIMIT %s
         """
         params = [query_embedding] + params + [query_embedding, k]
