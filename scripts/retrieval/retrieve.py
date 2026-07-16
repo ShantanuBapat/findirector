@@ -34,6 +34,18 @@ def _log_miss(query: str, filters: dict) -> None:
         }) + "\n")
 
 
+def _embedding_text(query: str, params: dict) -> str:
+    """Choose what to embed for the vector search.
+
+    The directive already extracted the semantic target (fact_requested or
+    concept) and the company/year (handled by metadata filters). Embedding the
+    distilled fact — not the full query — removes company/year noise and ranks
+    the on-topic chunk higher. Falls back to the full query when neither field
+    is present.
+    """
+    return params.get("fact_requested") or params.get("concept") or query
+
+
 def retrieve(query: str, params: dict, embedder, store, k: int = 5) -> dict:
     """Retrieve filing chunks for a directive-classified query.
 
@@ -55,7 +67,7 @@ def retrieve(query: str, params: dict, embedder, store, k: int = 5) -> dict:
     if year is not None:
         filters["fiscal_year"] = int(year)
 
-    query_vec = embedder.embed([query])[0]
+    query_vec = embedder.embed([_embedding_text(query, params)])[0]
     chunks = store.search(query_vec, k=k, filters=filters or None)
 
     if not chunks:
