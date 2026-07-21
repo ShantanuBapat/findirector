@@ -9,6 +9,54 @@ idea came from.
 
 ---
 
+## `research`: workflow vs agent (two query types, different handling)
+
+**Date:** 2026-07-14 · **Origin:** Session 3.4 (conversation-flow design) · **Target:** v2 (workflow) / v3 (agent)
+
+**Context.** The `research` action code covers all multi-document queries, but its
+trigger conditions span two structurally different query types that should *not* be
+handled the same way. The directive prompt's own triggers name both: "multiple
+companies / multiple periods" (one type) and "multi-hop reasoning where one
+retrieved fact informs the next query" (the other).
+
+**The idea — split `research` by control-flow structure:**
+
+*Type 1 — parallel/fixed multi-doc (deterministic workflow).* e.g. "Compare Apple
+and Microsoft's 2023 operating margins." The retrieval steps are knowable up front:
+retrieve for each named company/year, then synthesize. This is a **fan-out +
+synthesize workflow** — a loop over a known set, then one generation call. No agent
+needed.
+
+*Type 2 — multi-hop / exploratory (genuine agent).* e.g. "Which of these companies
+has the most supply-chain risk, and why?" The system must retrieve, read, and
+**decide what to retrieve next based on what it found** — the path can't be
+pre-planned because it depends on intermediate results. This is the real agent case:
+a reasoning loop that plans its own retrieval sequence and stops when it has enough.
+
+**The decision rule.** Does the sequence of retrievals depend on what earlier
+retrievals return? No → workflow (Type 1). Yes → agent (Type 2). Forcing Type 1
+through an agent adds nondeterminism, latency, and cost to solve what is essentially
+a `for` loop.
+
+**Why it matters.** This is the concrete boundary between "workflow" and "agent" in
+FinDirector — and the justification for *why* the project uses both. Building all
+`research` as an agent would be over-engineering; building none as an agent would
+make the most impressive (multi-hop) queries impossible. Handling the two types
+differently is the "judgment about when to use agents" the project is meant to
+demonstrate.
+
+**Roadmap fit.** v2 builds the Type 1 workflow (deterministic fan-out + synthesize —
+covers the bulk of comparison queries). v3 introduces the Type 2 agent — this is
+where LangGraph earns its place (multi-hop control flow, tool use, looping),
+consistent with the "LangGraph for v3 agentic actions" decision. `research` thus
+*evolves* workflow → agent as query difficulty grows.
+
+**Rough effort.** Medium for Type 1 (fan-out retrieval + synthesis over the existing
+RAG loop). Higher for Type 2 (agent framework, loop control, termination logic,
+guardrails against runaway retrieval).
+
+---
+
 ## Fiscal-year query mapping for non-December filers
 
 **Date:** 2026-07-10 · **Origin:** Session 3.2 metadata extraction · **Target:** Week 3/4 (retrieval)
