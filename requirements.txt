@@ -63,3 +63,13 @@ tiktoken==0.13.0
 psycopg[binary]==3.3.4
 pgvector==0.5.0
 sentence-transformers==5.6.0
+
+# ============================================================================
+# Serving layer — API (Session 4.x)
+# ============================================================================
+
+# FastAPI — web framework for the /query endpoint(s)
+fastapi>=0.110
+
+# Uvicorn — ASGI server that runs the FastAPI app (async, needed for SSE)
+uvicorn[standard]>=0.29
