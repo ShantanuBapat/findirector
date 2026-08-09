@@ -9,6 +9,47 @@ idea came from.
 
 ---
 
+## SSE streaming — defer to vLLM serving (Week 5)
+
+**Date:** 2026-08-09 · **Origin:** Session 4.x (serving layer) · **Target:** Week 5 (production serving)
+
+**Context.** The v1 API ships with a non-streaming `POST /query` that computes the
+full answer, then returns it as JSON. A streaming endpoint (token-by-token, the
+"typing" effect) was considered for v1 but deliberately deferred.
+
+**The idea.** Add true Server-Sent-Events streaming — `POST /query/stream`
+emitting `text/event-stream` — where tokens are sent as the model produces them,
+cutting *perceived* latency for the `lookup` path.
+
+**Why deferred to Week 5 (not built now).** Two reasons, both about doing it once
+and honestly:
+- **vLLM streams natively.** When generation moves from the Anthropic API to
+  self-hosted Qwen-via-vLLM in Week 5, token streaming is a first-class feature of
+  the serving layer. Building streaming against the Anthropic API now would be
+  **thrown away** when the vLLM path replaces it — two implementations for one
+  feature.
+- **Pseudo-streaming would be a facade.** The simpler alternative (compute the
+  full answer, then chunk it out for a fake typing effect) doesn't actually reduce
+  time-to-first-token — the server still computes everything first. For a portfolio
+  piece, a fake stream is worse than none; "real streaming or none" is the cleaner
+  story.
+
+**Why it matters.** Streaming is real UX value, but only when it's *true*
+incremental generation. The honest, DRY sequencing is: non-streaming `/query` is a
+complete v1 serving surface; true streaming lands in Week 5 as a natural companion
+to vLLM ("added token streaming when I moved to self-hosted vLLM, which streams
+natively").
+
+**Caveats.** The `Answer` contract (text + action_code + status + sources) is one
+finished object; a streaming path needs to decide how sources/metadata are
+delivered alongside a token stream (e.g. a final SSE event carrying the structured
+metadata after the text tokens). Design that when building it.
+
+**Rough effort.** Medium, in Week 5: a streaming generate path on the vLLM
+generator + an SSE endpoint that forwards tokens + a final metadata event.
+
+---
+
 ## `research`: workflow vs agent (two query types, different handling)
 
 **Date:** 2026-07-14 · **Origin:** Session 3.4 (conversation-flow design) · **Target:** v2 (workflow) / v3 (agent)
