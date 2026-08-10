@@ -53,7 +53,6 @@ env/
 *.tfstate.*
 *.tfvars
 !example.tfvars
-.terraform.lock.hcl
 
 # Docker
 .dockerignore_local
