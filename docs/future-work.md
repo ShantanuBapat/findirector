@@ -9,6 +9,48 @@ idea came from.
 
 ---
 
+## Eval baseline findings — routing & retrieval gaps to fix in the iteration pass
+
+**Date:** 2026-08-09 · **Origin:** Session 4.x (generation eval) · **Target:** iteration/hardening pass (after red teaming)
+
+**Context.** The first end-to-end generation eval (40 corpus-grounded cases) scored
+**70% naive (numeric 63.6%, text 77.8%)**, with retrieval at **hit-rate@5 85%,
+MRR 0.623**. Categorizing the 12 misses shows the headline understates real
+quality: **generation is strong** (no hallucinations — it correctly declines when
+context is missing rather than inventing answers). The real gaps are upstream.
+
+**The 12 misses, by true cause:**
+- **Routing (6):** in-corpus companies wrongly declined as "not in corpus" — JPM
+  (eval_011), META (eval_022), KO (eval_023), BAC (eval_039) returned
+  corpus-boundary declines despite being among the 20 tickers; NVDA (eval_021),
+  PG (eval_031) mis-declined as out-of-scope; GOOGL (eval_036) over-triggered
+  `clarify`. The router (or the retrieval company-filter/normalization) is
+  misfiring — highest-value fix.
+- **Retrieval (3):** BRK-B (eval_005), PFE (eval_013), JNJ (eval_015) — generation
+  correctly said "I can't find this in the excerpts," i.e. the right chunk wasn't
+  retrieved (eval_015 was also a retrieval-eval miss). Generation behaved
+  correctly; the gap is retrieval coverage/ranking.
+- **Eval-label error (likely 1):** TSLA (eval_006) — label says $832.0M, system
+  says $4,832M; the system may be *more* correct than the label. Fix the label so
+  the baseline is honest.
+- **Expected-unsupported (1):** BA (eval_025) — a percentage question correctly
+  routed to `compute` (not built). Not a real failure.
+
+**What to do (in the iteration pass, after red teaming):**
+1. Investigate the router misfires — is it extracting the wrong ticker, or is the
+   retrieval company-filter/normalization rejecting valid tickers? Start with
+   JPM/META/KO/BAC (clear in-corpus declines).
+2. Improve retrieval coverage/ranking for the missed chunks (BRK-B/PFE/JNJ).
+3. Fix the TSLA eval label (and re-scan the set for similar label issues).
+4. Re-run both evals to confirm the fixes move the numbers.
+
+**Why deferred.** The eval's job was diagnosis, not immediate repair; fixing now
+would rabbit-hole before the AWS deployment milestone. Collected into a dedicated
+iteration/hardening pass (corpus refresh + 10 more companies + router/eval/
+retrieval improvements) sequenced after red teaming.
+
+---
+
 ## SSE streaming — defer to vLLM serving (Week 5)
 
 **Date:** 2026-08-09 · **Origin:** Session 4.x (serving layer) · **Target:** Week 5 (production serving)
