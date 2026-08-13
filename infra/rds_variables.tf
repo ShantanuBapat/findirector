@@ -22,7 +22,7 @@ variable "db_master_username" {
 variable "db_engine_version" {
   description = "Postgres engine major.minor version for RDS"
   type        = string
-  default     = "16.4"
+  default     = "16.9"
 }
 
 variable "db_instance_class" {

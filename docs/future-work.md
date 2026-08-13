@@ -9,6 +9,40 @@ idea came from.
 
 ---
 
+## RDS follow-ups (from first apply/migrate/verify)
+
+**Date:** 2026-08-12 · **Status:** RDS layer applied, migrated, verified, torn down.
+
+- **Secrets Manager stores an empty password (bug to fix).** The
+  `aws_secretsmanager_secret_version` ended up with `{"username":...,
+  "password":""}` — the `random_password.result` didn't serialize into the
+  secret string. RDS itself got the correct password (the `aws_db_instance`
+  references `random_password.result` directly), so the database works; only the
+  *stored secret* is empty. Fix needed before the app fetches credentials from
+  the secret. Likely cause: sensitive-value handling in
+  `jsonencode`/`secret_version`. Next session: debug and re-apply so the secret
+  holds the real credential.
+
+- **Migration pattern (verified — keep).** Loaded 18,742 chunks from
+  `corpus_embedded.jsonl` via `load_from_file()` over the SSM tunnel; env vars
+  (`POSTGRES_HOST=localhost` etc.) point `db.py` at `localhost:5432` = RDS.
+  Verified: row count 18,742; embeddings non-null @ 1024 dims; all 20 tickers;
+  live similarity query sane; `run_retrieval_eval.py` against RDS matched local
+  (hit-rate@5 85%, MRR ~0.64). Confirmed it read RDS not local
+  (`inet_server_addr` = 10.0.x.x, `rds.extensions` set, local Docker down).
+
+- **Snapshot restore now available.** Final snapshot
+  `findirector-db-final-<ts>` exists (belt-and-suspenders belt). Next spin-up can
+  restore via `snapshot_identifier` (faster) instead of re-migrating from
+  `corpus_embedded.jsonl` (suspenders) — wire snapshot-restore as an option in
+  the RDS Terraform.
+
+- **SSM access pattern (works end-to-end).** t3.micro tunnel instance + 3 VPC
+  interface endpoints (ssm/ssmmessages/ec2messages) + `db_client` SG badge.
+  Connect: `aws ssm start-session --target <id> --document-name
+  AWS-StartPortForwardingSessionToRemoteHost --parameters '{"host":[<rds>],
+  "portNumber":["5432"],"localP
+  
 ## Eval baseline findings — routing & retrieval gaps to fix in the iteration pass
 
 **Date:** 2026-08-09 · **Origin:** Session 4.x (generation eval) · **Target:** iteration/hardening pass (after red teaming)
