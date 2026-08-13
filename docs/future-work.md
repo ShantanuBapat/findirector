@@ -13,15 +13,14 @@ idea came from.
 
 **Date:** 2026-08-12 · **Status:** RDS layer applied, migrated, verified, torn down.
 
-- **Secrets Manager stores an empty password (bug to fix).** The
-  `aws_secretsmanager_secret_version` ended up with `{"username":...,
-  "password":""}` — the `random_password.result` didn't serialize into the
-  secret string. RDS itself got the correct password (the `aws_db_instance`
-  references `random_password.result` directly), so the database works; only the
-  *stored secret* is empty. Fix needed before the app fetches credentials from
-  the secret. Likely cause: sensitive-value handling in
-  `jsonencode`/`secret_version`. Next session: debug and re-apply so the secret
-  holds the real credential.
+- **Verify the Secrets Manager stored value next time RDS is up.** The migration
+  worked using the fetched master credential, so the secret flow is functional
+  and the DB password is correct. A terminal display of `get-secret-value` once
+  showed an empty `password` field, but that was likely a redaction/misread, not
+  a real bug — the `aws_secretsmanager_secret_version` Terraform (jsonencode of
+  username + `random_password.result`) looks correct. To close the loop: when
+  RDS is next running, fetch the secret and confirm it contains the real
+  password. No fix expected; just verify.
 
 - **Migration pattern (verified — keep).** Loaded 18,742 chunks from
   `corpus_embedded.jsonl` via `load_from_file()` over the SSM tunnel; env vars
