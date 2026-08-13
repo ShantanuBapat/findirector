@@ -29,3 +29,34 @@ provider "aws" {
     }
   }
 }
+
+# --- Kubernetes + Helm providers: how Terraform talks to the CLUSTER ---
+# These let Terraform install workloads (like the Karpenter controller) INTO the
+# EKS cluster. They're configured from the EKS module's outputs — the cluster's
+# control-plane API endpoint and a short-lived auth token — which resolve at
+# apply time (after the cluster exists). Auth uses a token fetched via the AWS
+# CLI, so no static kubeconfig is needed.
+
+provider "kubernetes" {
+  host                   = module.eks.cluster_endpoint
+  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "aws"
+    args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name, "--profile", var.aws_profile]
+  }
+}
+
+provider "helm" {
+  kubernetes = {
+    host                   = module.eks.cluster_endpoint
+    cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+
+    exec = {
+      api_version = "client.authentication.k8s.io/v1beta1"
+      command     = "aws"
+      args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name, "--profile", var.aws_profile]
+    }
+  }
+}
