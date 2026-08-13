@@ -36,3 +36,24 @@ output "vpc_id" {
   description = "VPC id"
   value       = module.vpc.vpc_id
 }
+
+# --- EKS outputs ---
+
+# The command to configure kubectl to talk to this cluster. Run this after apply
+# to point your local kubectl at the cluster's control-plane API server.
+output "configure_kubectl" {
+  description = "Run this to point kubectl at the cluster"
+  value       = "aws eks update-kubeconfig --name ${module.eks.cluster_name} --region ${var.aws_region} --profile ${var.aws_profile}"
+}
+
+# The cluster's control-plane API server endpoint.
+output "cluster_endpoint" {
+  description = "EKS control-plane API server endpoint"
+  value       = module.eks.cluster_endpoint
+}
+
+# The cluster name.
+output "cluster_name" {
+  description = "EKS cluster name"
+  value       = module.eks.cluster_name
+}
