@@ -1,0 +1,36 @@
+# requirements-serve.txt
+#
+# WHAT THIS IS:
+#   The SERVING (inference) dependency set for the FinDirector app image — only
+#   what api/main.py's request path needs, NOT the training/data stack in
+#   requirements.txt. Keeping this minimal makes the container image small, fast
+#   to build/pull, and cheap to run (the train-vs-serve split).
+#
+# WHAT'S DELIBERATELY EXCLUDED (training/data-only, never hit at request time):
+#   transformers, peft, trl, accelerate, wandb, datasets, sec-edgar-downloader,
+#   sec-parser, scikit-learn, nbformat, jsonlines, pandas.
+#
+# torch is CPU-only here (app pods run on CPU nodes; the GPU is for the separate
+# model server). CPU wheels are a fraction of the default GPU build's size.
+
+# --- Web serving ---
+fastapi>=0.110
+uvicorn[standard]>=0.29
+
+# --- Talk to RDS (pgvector store) ---
+psycopg[binary]==3.3.4
+pgvector==0.5.0
+
+# --- Router + generator call Claude ---
+anthropic>=0.40.0
+
+# --- Query embedding (LocalEmbedder loads BGE-M3 per request) ---
+# sentence-transformers pulls torch; we install CPU torch explicitly (below) so
+# pip doesn't grab the huge default/GPU build.
+sentence-transformers==5.6.0
+
+# --- Secrets / config ---
+python-dotenv==1.2.2
+
+# --- Utilities the request path may touch ---
+tiktoken==0.13.0

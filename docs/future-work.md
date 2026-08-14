@@ -9,6 +9,33 @@ idea came from.
 
 ---
 
+## Slim the serving image — move query-embedding to its own service (improvement)
+
+**Date:** 2026-08-13 · **Context:** the FinDirector app image is ~3.2GB because
+`LocalEmbedder` loads BGE-M3 (torch + a ~2GB model) inside the app pod to embed
+each incoming query.
+
+**Current (shipped — option B):** query-embedding runs *inside* the app pod.
+Simple, no app-code changes, works end-to-end (validated: containerized app
+answered a real /query with correct sourced results against the local pgvector
+DB). Cost: the image carries CPU torch + sentence-transformers + the baked-in
+BGE-M3 model, making it large (~3.2GB) and slower to start (model load into
+memory).
+
+**Improvement (option C):** move query-embedding to a dedicated embedding
+service/endpoint that the app calls over the network. This drops torch +
+sentence-transformers from the app image entirely → a small, fast-starting app
+image; embedding becomes independently scalable (its own pod/replica count).
+Cost: build the embedding service and refactor LocalEmbedder/the orchestrator to
+call it instead of loading the model in-process. Good fit for the
+iteration/hardening pass — a strong "here's how I'd scale this" story.
+
+**Note on scope:** corpus-embedding (all 18,742 chunks) was a one-time offline
+*training-time* job — already done, vectors live in RDS. Only *query*-embedding
+is the serving-time concern this improvement addresses.
+
+---
+
 ## RDS follow-ups (from first apply/migrate/verify)
 
 **Date:** 2026-08-12 · **Status:** RDS layer applied, migrated, verified, torn down.
