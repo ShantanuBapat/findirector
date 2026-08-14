@@ -1,0 +1,29 @@
+# .dockerignore — exclude from the Docker build context
+# (keeps builds fast and prevents large/irrelevant files entering the image)
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Version control
+.git/
+.gitignore
+
+# Large data + artifacts (NOT needed in the serving image)
+data/
+results/
+notebooks/
+exploration/
+
+# Infra / docs / local
+infra/
+docs/
+*.md
+.env
+.env.example
+docker-compose.yml
+Dockerfile
+.dockerignore
+.DS_Store
+.vscode/
