@@ -1,0 +1,22 @@
+# k8s/service.yaml
+#
+# WHAT THIS DECLARES:
+#   A Kubernetes Service for the FinDirector app — a STABLE address for the set of
+#   app pods, load-balancing across whatever replicas are alive. Solves the
+#   "pods have changing IPs" problem: callers use this name, not pod IPs.
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: findirector-app
+  labels:
+    app: findirector-app
+spec:
+  type: ClusterIP              # internal-only address (reachable inside the cluster)
+  selector:
+    app: findirector-app       # routes to pods carrying this label (from the Deployment)
+  ports:
+    - name: http
+      port: 80                 # the Service is reached on port 80
+      targetPort: 8000         # ...and forwards to the pod's port 8000 (the app)
+      protocol: TCP
