@@ -1,0 +1,60 @@
+# k8s/deployment.yaml
+#
+# WHAT THIS DECLARES:
+#   A Kubernetes Deployment for the FinDirector app — "keep N copies of the app
+#   image running as pods, and restart/replace them to maintain that count."
+#   This is the desired-state object ArgoCD will eventually sync from git.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: findirector-app
+  labels:
+    app: findirector-app
+spec:
+  replicas: 2                      # keep 2 copies running (resilience + basic scale)
+  selector:
+    matchLabels:
+      app: findirector-app         # this Deployment manages pods with this label
+  template:                        # the pod "template" — what each replica looks like
+    metadata:
+      labels:
+        app: findirector-app       # pods get this label (Service + selector match on it)
+    spec:
+      containers:
+        - name: app
+          # Image lives in ECR; tag set at deploy time. Placeholder account id
+          # is replaced when we wire the real push (kept as a var to fill in).
+          image: ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/findirector-app:latest
+          ports:
+            - containerPort: 8000  # the app listens on 8000 (matches the Dockerfile)
+          # --- Resources: what the pod requests/limits (drives scheduling) ---
+          resources:
+            requests:              # guaranteed minimum (scheduler places based on this)
+              cpu: "500m"          # 0.5 vCPU
+              memory: "2Gi"        # 2 GB (BGE-M3 in memory needs headroom)
+            limits:                # hard ceiling
+              cpu: "1000m"         # 1 vCPU
+              memory: "4Gi"        # 4 GB
+          # --- Config + secrets, injected as env vars (NOT hardcoded) ---
+          envFrom:
+            - secretRef:
+                name: findirector-secrets   # DB creds + ANTHROPIC_API_KEY live here
+          env:
+            - name: POSTGRES_HOST
+              value: "RDS_ENDPOINT_PLACEHOLDER"   # the RDS address (filled at deploy)
+            - name: POSTGRES_PORT
+              value: "5432"
+          # --- Health probes: K8s uses /health to manage the pod ---
+          livenessProbe:           # "is the pod alive?" — restart if this fails
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 60   # give BGE-M3 time to load before probing
+            periodSeconds: 15
+          readinessProbe:          # "is the pod ready for traffic?" — hold traffic until ok
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 10
